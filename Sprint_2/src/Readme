@@ -1,1 +1,614 @@
 
+# Proyecto RII 3 - Sprint 2 - Grupo 14
+
+**Asignatura:** Proyecto RII 3: Robots Inteligentes  
+**Integrantes:** Alex Marco Jover, Vicent Briones Cano y Bruno Gracia Donat.
+
+En este Sprint hemos desarrollado un programa en **ROS 2** para que un robot móvil recorra de forma autónoma una trayectoria con la forma del número **14**. También hemos incorporado un detector de obstáculos mediante **LiDAR**, de forma que el robot se detiene cuando detecta un objeto delante y continúa el recorrido cuando desaparece.
+
+Primero hemos realizado las pruebas con **TurtleBot3 en Gazebo** y hemos preparado una adaptación para el **JetBot físico**.
+
+El sistema incluye tres servicios para **detener, reanudar y reiniciar** el dibujo, y permite visualizar el recorrido en **RViz**.
+
+> **Estado del proyecto (29/10/2026):** El dibujo del 14, los servicios y la detección de obstáculos están comprobados en simulación. La adaptación del JetBot está programada, pero sus pruebas físicas y algunos ajustes del paquete siguen pendientes. Se indica más adelante qué falta validar.
+
+---
+
+# 1. Sistema y herramientas utilizadas
+
+En las pruebas de simulación hemos utilizado:
+
+```text
+Ubuntu
+ROS 2 Humble
+Python 3
+TurtleBot3 Waffle
+Gazebo Classic
+RViz 2
+Colcon
+```
+
+Nuestro ordenador de desarrollo utiliza Ubuntu 24.04 con un entorno ROS 2 Humble configurado. Para realizar una instalación nueva de Humble desde los paquetes oficiales, la opción habitual es **Ubuntu 22.04**.
+
+Para el JetBot del laboratorio trabajamos con **ROS 2 Foxy** sobre el sistema operativo del robot. Esta parte debe compilarse y comprobarse en el propio JetBot; que funcione en Humble no garantiza automáticamente que funcione en Foxy.
+
+---
+
+# 2. Objetivos del Sprint 2
+
+Los objetivos principales son:
+
+1. Controlar el movimiento autónomo de un robot móvil para recorrer el número 14.
+2. Obtener su posición y orientación a partir de la odometría.
+3. Implementar servicios ROS 2 para detener, reanudar y reiniciar el recorrido.
+4. Detectar obstáculos mediante las mediciones del LiDAR.
+5. Detener el movimiento ante un obstáculo y continuar automáticamente cuando se retire.
+6. Comprobar el funcionamiento en Gazebo y preparar la adaptación al JetBot real.
+
+---
+
+# 3. Estructura del repositorio
+
+El código del Sprint 2 está en la carpeta `Sprint_2` de la rama `Sprint2` del repositorio compartido:
+
+```text
+Proyectos3/
+├── README.md                         # README general del repositorio (Sprint 1)
+├── src/                              # Código del Sprint 1
+└── Sprint_2/
+    ├── README.md                     # Este documento
+    └── src/
+        ├── g14_prii3_move_turtlebot/
+        │   ├── g14_prii3_move_turtlebot/
+        │   │   ├── __init__.py
+        │   │   ├── draw_number.py
+        │   │   └── collision_avoidance.py
+        │   ├── launch/
+        │   │   ├── draw_number.launch.py
+        │   │   └── robot_colision.launch.py
+        │   ├── package.xml
+        │   ├── setup.py
+        │   └── setup.cfg
+        └── g14_prii3_move_jetbot/
+            ├── g14_prii3_move_jetbot/
+            │   ├── __init__.py
+            │   ├── draw_number.py
+            │   └── collision_avoidance.py
+            ├── launch/
+            │   └── robot_colision.launch.py
+            ├── package.xml
+            ├── setup.py
+            └── setup.cfg
+```
+
+Se han creado dos paquetes para separar la versión de simulación de la versión destinada al robot físico.
+
+---
+
+# 4. Descargar el proyecto
+
+Abrir una terminal y ejecutar:
+
+```bash
+git clone --branch Sprint2 https://github.com/Vbrican/Proyectos3.git Proyectos3_git
+cd Proyectos3_git/Sprint_2
+```
+
+**Importante:** hay que seleccionar la rama `Sprint2`. La rama principal `main` contiene el Sprint 1.
+
+Si el repositorio ya está descargado, no es necesario clonarlo de nuevo. Basta con actualizar la rama correspondiente y entrar en `Sprint_2`:
+
+```bash
+cd ~/Proyectos3_git
+git switch Sprint2
+git pull origin Sprint2
+cd Sprint_2
+```
+
+---
+
+# 5. Preparar el entorno de simulación
+
+Es necesario disponer de ROS 2 Humble, Colcon y los paquetes de TurtleBot3 y Gazebo.
+
+En una instalación compatible de Humble, los paquetes principales se pueden instalar con:
+
+```bash
+sudo apt update
+sudo apt install python3-colcon-common-extensions \
+  ros-humble-turtlebot3-gazebo \
+  ros-humble-turtlebot3-bringup \
+  ros-humble-rviz2
+```
+
+Cargar ROS 2:
+
+```bash
+source /opt/ros/humble/setup.bash
+```
+
+Comprobar la distribución:
+
+```bash
+echo $ROS_DISTRO
+```
+
+El resultado esperado en simulación es:
+
+```text
+humble
+```
+
+Si el sistema ya tiene instalados Gazebo y TurtleBot3, no hace falta repetir la instalación.
+
+---
+
+# 6. Compilar el paquete TurtleBot3
+
+Situarse en el workspace del Sprint 2:
+
+```bash
+cd ~/Proyectos3_git/Sprint_2
+source /opt/ros/humble/setup.bash
+```
+
+Compilar el paquete de simulación:
+
+```bash
+colcon build --packages-select g14_prii3_move_turtlebot
+```
+
+Cuando termine correctamente debería aparecer un resultado similar a:
+
+```text
+Summary: 1 package finished
+```
+
+Cargar el paquete compilado:
+
+```bash
+source install/setup.bash
+```
+
+Comprobar los ejecutables:
+
+```bash
+ros2 pkg executables g14_prii3_move_turtlebot
+```
+
+Deben aparecer `draw_number` y `collision_avoidance`.
+
+---
+
+# 7. Configuración de ROS 2 para las pruebas locales
+
+En nuestras pruebas hemos utilizado el dominio **114** para trabajar separados de otros equipos ROS 2 del laboratorio.
+
+En cada terminal de la simulación se ejecuta:
+
+```bash
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+```
+
+`ROS_LOCALHOST_ONLY=1` limita la comunicación al mismo ordenador. **No se debe utilizar esta configuración si queremos comunicarnos entre el portátil y el JetBot físico por red.**
+
+Además, en nuestro ordenador utilizamos:
+
+```bash
+export LIBGL_ALWAYS_SOFTWARE=1
+```
+
+Este ajuste permitió ejecutar correctamente Gazebo usando renderizado por software. No es necesario en todos los ordenadores.
+
+---
+
+# 8. Iniciar TurtleBot3 en Gazebo
+
+Abrir la **primera terminal** y ejecutar:
+
+```bash
+source /opt/ros/humble/setup.bash
+export TURTLEBOT3_MODEL=waffle
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+export LIBGL_ALWAYS_SOFTWARE=1
+ros2 launch turtlebot3_gazebo empty_world.launch.py
+```
+
+Se abre Gazebo con el TurtleBot3 en un mundo vacío.
+
+**Mantener esta terminal abierta** durante toda la prueba.
+
+---
+
+# 9. Ejecutar el dibujo del 14 sin LiDAR (PBI 2.1)
+
+Abrir la **segunda terminal** y ejecutar:
+
+```bash
+cd ~/Proyectos3_git/Sprint_2
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+ros2 launch g14_prii3_move_turtlebot draw_number.launch.py
+```
+
+Este archivo inicia únicamente `draw_number.py` y no exige información del detector.
+
+El robot comienza **pausado**. Para iniciar el recorrido hay que llamar al servicio `/draw_number/reanudar`, como se explica en el apartado 11.
+
+---
+
+# 10. Ejecutar dibujo y detección de obstáculos (PBI 2.2)
+
+Para activar también el detector, detener primero el launch anterior con `Ctrl + C` y ejecutar:
+
+```bash
+cd ~/Proyectos3_git/Sprint_2
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+ros2 launch g14_prii3_move_turtlebot robot_colision.launch.py
+```
+
+Este launch inicia dos nodos:
+
+- `draw_number`: calcula y publica el movimiento.
+- `detector_colisiones`: analiza el LiDAR y publica si existe un obstáculo.
+
+**No hay que ejecutar simultáneamente los dos launch** (`draw_number.launch.py` y `robot_colision.launch.py`), porque se crearían dos controladores intentando publicar órdenes de movimiento al mismo robot.
+
+---
+
+# 11. Servicios para controlar el dibujo
+
+Abrir una **tercera terminal**:
+
+```bash
+cd ~/Proyectos3_git/Sprint_2
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+```
+
+El nodo empieza detenido por seguridad. Para comenzar:
+
+```bash
+ros2 service call /draw_number/reanudar std_srvs/srv/Trigger "{}"
+```
+
+## 11.1 Detener
+
+```bash
+ros2 service call /draw_number/detener std_srvs/srv/Trigger "{}"
+```
+
+El robot solicita velocidad cero y conserva el segmento actual.
+
+## 11.2 Reanudar
+
+```bash
+ros2 service call /draw_number/reanudar std_srvs/srv/Trigger "{}"
+```
+
+Continúa desde el punto pendiente siempre que haya odometría reciente y el recorrido no esté finalizado. Si el LiDAR detecta un obstáculo, seguirá detenido hasta que desaparezca.
+
+## 11.3 Reiniciar
+
+```bash
+ros2 service call /draw_number/reiniciar std_srvs/srv/Trigger "{}"
+```
+
+Reinicia la secuencia, borra el marcador anterior y deja el robot pausado. **No devuelve físicamente el robot a su posición inicial**: utiliza la posición actual como nuevo origen. Para empezar de nuevo, hay que volver a llamar a `/reanudar`.
+
+---
+
+# 12. Visualizar el dibujo en RViz
+
+Abrir una **cuarta terminal**:
+
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+rviz2
+```
+
+En RViz:
+
+1. En **Global Options**, seleccionar `Fixed Frame = odom`.
+2. Pulsar **Add** y añadir una visualización de tipo **Marker**.
+3. En el topic del marcador seleccionar `/draw_number/trazo`.
+4. Opcionalmente, en **Views**, utilizar `TopDownOrtho` para ver el recorrido desde arriba.
+
+El programa registra los puntos del robot durante la fase de dibujo y los representa mediante un marcador de tipo `LINE_LIST`.
+
+Los desplazamientos entre los trazos no se registran como parte del número, de forma similar a levantar el lápiz en Turtlesim.
+
+---
+
+# 13. Funcionamiento del movimiento autónomo
+
+El archivo principal de movimiento es:
+
+```text
+src/g14_prii3_move_turtlebot/g14_prii3_move_turtlebot/draw_number.py
+```
+
+El programa utiliza cuatro segmentos para representar el número 14. En cada segmento distingue dos fases:
+
+- `ir_inicio`: desplazarse hasta el principio del trazo sin dibujar.
+- `dibujar`: recorrer el segmento mientras se registra la trayectoria para RViz.
+
+La función `control()` se ejecuta aproximadamente cada **0,1 segundos**. Recibe la posición de `/odom`, calcula la distancia y el error angular respecto al siguiente objetivo y publica un mensaje `Twist` en `/cmd_vel`.
+
+Si el error de orientación es grande, el robot gira sin avanzar. Cuando está suficientemente orientado, puede avanzar y corregir ligeramente su dirección.
+
+El programa también comprueba que no se hayan perdido los mensajes de odometría. Si no recibe datos recientes, pausa el movimiento.
+
+Esquema general:
+
+```text
+Recibir odometría (/odom)
+           |
+           v
+Comprobar pausa y LiDAR
+           |
+           v
+Seleccionar segmento y objetivo
+           |
+           v
+Calcular distancia y error angular
+           |
+           v
+Publicar velocidad (/cmd_vel)
+           |
+           v
+Registrar trazo y publicar Marker
+           |
+           v
+Repetir hasta completar el número 14
+```
+
+---
+
+# 14. Funcionamiento de la detección de obstáculos
+
+El detector está en:
+
+```text
+src/g14_prii3_move_turtlebot/g14_prii3_move_turtlebot/collision_avoidance.py
+```
+
+Este nodo se suscribe a `/scan`, con mensajes `sensor_msgs/msg/LaserScan`.
+
+Para cada medición calcula su ángulo y analiza únicamente el sector frontal entre **−20° y +20°**.
+
+Entre las distancias válidas busca la más cercana:
+
+- Si está a **menos de 0,65 m**, publica `True`.
+- Si la zona frontal está libre según las lecturas interpretables, publica `False`.
+- Si no dispone de ninguna lectura frontal interpretable, publica `True` por precaución.
+
+El resultado se envía como un mensaje `std_msgs/msg/Bool` a `/obstaculo_detectado`.
+
+`draw_number.py` escucha este topic. Cuando recibe un obstáculo, publica velocidad cero **sin borrar el segmento actual**. Cuando el detector vuelve a indicar camino libre, el dibujo continúa automáticamente si no hay una pausa manual.
+
+```text
+LiDAR -> /scan -> collision_avoidance.py
+                           |
+                           v
+                  /obstaculo_detectado
+                           |
+                           v
+                      draw_number.py
+                           |
+                           v
+                        /cmd_vel
+```
+
+---
+
+# 15. Comprobar los topics
+
+Con los nodos ejecutándose y la misma configuración de dominio:
+
+```bash
+ros2 topic list
+```
+
+Los topics principales son:
+
+| Topic | Tipo | Función |
+| --- | --- | --- |
+| `/odom` | `nav_msgs/msg/Odometry` | Posición y orientación del robot |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | Órdenes de movimiento |
+| `/scan` | `sensor_msgs/msg/LaserScan` | Lecturas del LiDAR |
+| `/obstaculo_detectado` | `std_msgs/msg/Bool` | Resultado de la detección |
+| `/draw_number/trazo` | `visualization_msgs/msg/Marker` | Dibujo del número en RViz |
+
+Para comprobar el detector:
+
+```bash
+ros2 topic echo /obstaculo_detectado
+```
+
+Sin obstáculos cercanos debería mostrar `data: false`, siempre que el LiDAR esté recibiendo lecturas interpretables.
+
+Si se detecta un obstáculo delante, debería mostrar `data: true`.
+
+Para comprobar la recepción del LiDAR:
+
+```bash
+ros2 topic hz /scan
+```
+
+Para ver los servicios:
+
+```bash
+ros2 service list | grep draw_number
+```
+
+---
+
+# 16. Prueba de obstáculos en Gazebo
+
+Hemos realizado la siguiente comprobación:
+
+1. Iniciar Gazebo y `robot_colision.launch.py`.
+2. Activar el dibujo con `/draw_number/reanudar`.
+3. Añadir una caja delante del TurtleBot3 en Gazebo.
+4. Comprobar que `/obstaculo_detectado` cambia a `True`.
+5. Observar que el robot se detiene.
+6. Alejar o retirar la caja.
+7. Comprobar que el detector vuelve a `False` y el robot continúa sin reiniciar la trayectoria.
+8. Dejar que complete el número 14 y observar el marcador en RViz.
+
+En las pruebas realizadas se verificó la parada ante el obstáculo, la reanudación automática al retirarlo y el mensaje:
+
+```text
+Numero 14 completado
+```
+
+También se comprobaron los tres servicios de control.
+
+---
+
+# 17. Adaptación al JetBot físico
+
+El segundo paquete se encuentra en:
+
+```text
+src/g14_prii3_move_jetbot/
+```
+
+Se ha preparado reutilizando la lógica de simulación. Los cambios propuestos en `draw_number.py` son:
+
+| Parámetro | TurtleBot3 (simulación) | JetBot (propuesta inicial) |
+| --- | ---: | ---: |
+| Escala del número | 0,25 | 0,15 |
+| Velocidad lineal máxima | 0,12 m/s | 0,06 m/s |
+| Velocidad angular máxima | 0,65 rad/s | 0,25 rad/s |
+| Reloj de simulación (`use_sim_time`) | `True` | `False` |
+
+Se han mantenido los servicios, la trayectoria geométrica, la recepción de odometría y el esquema de detección de obstáculos.
+
+**La adaptación no está validada todavía en el JetBot físico.** Antes de ejecutar el recorrido hay que comprobar cómo interpreta su controlador los mensajes `Twist` de `/cmd_vel`, la frecuencia de `/odom`, la orientación del LiDAR y el margen real de frenado.
+
+### Estado del paquete JetBot en GitHub
+
+El código fuente de `draw_number.py`, `collision_avoidance.py` y `launch/robot_colision.launch.py` está preparado. **Sin embargo, en la versión revisada del repositorio, `setup.py` todavía no registra el ejecutable `collision_avoidance` ni instala los archivos `launch`, y `package.xml` todavía no declara todas las dependencias del detector y RViz.**
+
+Por tanto, antes de ejecutar `robot_colision.launch.py` en el JetBot, se deben completar estos archivos y recompilar el paquete:
+
+- Registrar en `setup.py` el ejecutable `collision_avoidance` y la instalación de `launch/*.launch.py`.
+- Declarar `sensor_msgs`, `std_msgs`, `visualization_msgs`, `launch` y `launch_ros` en `package.xml`.
+- Compilar en el entorno ROS 2 Foxy del JetBot y comprobar los ejecutables mediante `ros2 pkg executables g14_prii3_move_jetbot`.
+
+Una vez realizadas estas comprobaciones, la ejecución prevista es:
+
+```bash
+source /opt/ros/foxy/setup.bash
+source ~/g14_prii3_ws/install/setup.bash
+ros2 launch g14_prii3_move_jetbot robot_colision.launch.py
+```
+
+**Este comando presupone que el paquete ya se ha copiado al workspace del JetBot, compilado correctamente y que están funcionando sus drivers de odometría, movimiento y LiDAR.**
+
+Para la comunicación por red entre el portátil y el robot, ambos deben utilizar el mismo `ROS_DOMAIN_ID` y una configuración de red que permita descubrir los nodos; no se debe activar `ROS_LOCALHOST_ONLY=1` en ese caso.
+
+Las primeras pruebas físicas deben realizarse supervisadas, con el robot inmovilizado mientras se verifica el controlador y con una forma independiente de detenerlo.
+
+---
+
+# 18. Ejecución rápida: simulación completa
+
+Una vez instaladas las dependencias y compilado el paquete:
+
+**Terminal 1 - Gazebo:**
+
+```bash
+source /opt/ros/humble/setup.bash
+export TURTLEBOT3_MODEL=waffle
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+export LIBGL_ALWAYS_SOFTWARE=1
+ros2 launch turtlebot3_gazebo empty_world.launch.py
+```
+
+**Terminal 2 - Movimiento + LiDAR:**
+
+```bash
+cd ~/Proyectos3_git/Sprint_2
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+ros2 launch g14_prii3_move_turtlebot robot_colision.launch.py
+```
+
+**Terminal 3 - Activar el recorrido:**
+
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+ros2 service call /draw_number/reanudar std_srvs/srv/Trigger "{}"
+```
+
+**Terminal 4 - RViz (opcional):**
+
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=114
+export ROS_LOCALHOST_ONLY=1
+rviz2
+```
+
+Configurar `Fixed Frame = odom` y añadir el topic `/draw_number/trazo` como `Marker`.
+
+---
+
+# 19. Resumen de comandos principales
+
+| Acción | Comando |
+| --- | --- |
+| Compilar TurtleBot3 | `colcon build --packages-select g14_prii3_move_turtlebot` |
+| Ejecutar solo dibujo | `ros2 launch g14_prii3_move_turtlebot draw_number.launch.py` |
+| Ejecutar dibujo y LiDAR | `ros2 launch g14_prii3_move_turtlebot robot_colision.launch.py` |
+| Detener | `ros2 service call /draw_number/detener std_srvs/srv/Trigger "{}"` |
+| Reanudar | `ros2 service call /draw_number/reanudar std_srvs/srv/Trigger "{}"` |
+| Reiniciar | `ros2 service call /draw_number/reiniciar std_srvs/srv/Trigger "{}"` |
+| Comprobar detector | `ros2 topic echo /obstaculo_detectado` |
+| Comprobar LiDAR | `ros2 topic hz /scan` |
+| Ver el recorrido | RViz → `Marker` → `/draw_number/trazo` |
+
+---
+
+# 20. Resultados y conclusiones
+
+En simulación hemos conseguido que el TurtleBot3:
+
+- Dibuje automáticamente los cuatro segmentos del número 14.
+- Permita detener, reanudar y reiniciar el recorrido mediante servicios ROS 2.
+- Registre la trayectoria y la represente en RViz.
+- Detecte obstáculos mediante LiDAR.
+- Se detenga al colocar un obstáculo delante y continúe al retirarlo, sin perder el progreso del dibujo.
+
+La separación entre el nodo de movimiento y el nodo detector permite probar cada parte por separado y reutilizar el mismo detector en el JetBot.
+
+**Trabajo pendiente:** completar la configuración del paquete JetBot y validar su funcionamiento real, ajustando los parámetros si es necesario.
+
+---
+
+# Grupo
+
+**Grupo 14 - Proyecto RII 3: Robots Inteligentes**
+
+- Alex Marco Jover
+- Vicent Briones Cano
+- Bruno Gracia Donat
