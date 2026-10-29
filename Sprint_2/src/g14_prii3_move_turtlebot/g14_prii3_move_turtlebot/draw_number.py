@@ -61,7 +61,7 @@ class DrawNumber(Node):
             self.origen = self.pose
 
     def recibir_obstaculo(self, msg):
-        # El detector de nuestro companero publica el estado por este topic.
+        # El detector publica el estado por este topic.
         self.obstaculo = msg.data
         self.ultima_senal = time.monotonic()
 
